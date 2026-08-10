@@ -1,4 +1,5 @@
 # 🧠 DocuMind — RAG-Powered Document Intelligence System
+url : https://nangliaharsh-documind-frontendapp-3gg4d8.streamlit.app/
 
 Production-grade multi-document RAG pipeline using LangChain, LLaMA 3 (Groq), ChromaDB and FastAPI enabling natural language Q&A across multiple documents with source-cited responses and conversational memory. Implemented hybrid retrieval combining BM25 sparse search with dense vector embeddings, followed by cross-encoder re-ranking and citation verification. Evaluated using RAGAS framework.
 
