@@ -4,6 +4,12 @@ import os
 API_URL = os.getenv("API_URL", "https://documind-backend-production-3be0.up.railway.app")
 API_URL = "http://localhost:8000"
 
+# Keep backend alive
+try:
+    requests.get(f"{API_URL}/health", timeout=5)
+except:
+    pass
+
 
 st.set_page_config(page_title="DocuMind", page_icon="🧠", layout="wide", initial_sidebar_state="expanded")
 
