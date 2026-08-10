@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import os
 API_URL = os.getenv("API_URL", "https://documind-backend-production-3be0.up.railway.app")
-API_URL = "http://localhost:8000"
+# API_URL = "http://localhost:8000"
 
 # Keep backend alive
 try:
