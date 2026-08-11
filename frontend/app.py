@@ -1,8 +1,9 @@
 import streamlit as st
 import requests
 import os
+import uuid
+
 API_URL = os.getenv("API_URL", "https://documind-backend-production-3be0.up.railway.app")
-# API_URL = "http://localhost:8000"
 
 # Keep backend alive
 try:
@@ -10,6 +11,9 @@ try:
 except:
     pass
 
+# Generate unique session ID
+if "session_id" not in st.session_state:
+    st.session_state["session_id"] = str(uuid.uuid4())
 
 st.set_page_config(page_title="DocuMind", page_icon="🧠", layout="wide", initial_sidebar_state="expanded")
 
@@ -65,10 +69,10 @@ with st.sidebar:
     st.markdown("#### 📄 Upload Document")
     st.caption("Supports PDF, DOCX, TXT")
     uploaded_file = st.file_uploader(
-    "Choose a file",
-    type=["pdf", "docx", "txt"],
-    label_visibility="collapsed"
-)
+        "Choose a file",
+        type=["pdf", "docx", "txt"],
+        label_visibility="collapsed"
+    )
 
     if uploaded_file:
         if uploaded_file.name not in st.session_state.get("uploaded_names", []):
@@ -100,7 +104,6 @@ with st.sidebar:
                     requests.delete(f"{API_URL}/documents/{doc}")
                     st.rerun()
 
-            # Show summary expander under each doc
             with st.expander("📋 Summary", expanded=False):
                 try:
                     res = requests.get(f"{API_URL}/summary/{doc}")
@@ -121,8 +124,6 @@ with st.sidebar:
 
         st.session_state["selected_docs"] = selected_docs
 
-    # Stats
-    if docs:
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
@@ -136,6 +137,18 @@ with st.sidebar:
                 <div style='font-size:11px;color:#888'>Messages</div>
                 <div style='font-size:22px;font-weight:600;color:#1A3C5E'>{msgs}</div>
             </div>""", unsafe_allow_html=True)
+
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑 Chat", use_container_width=True):
+                st.session_state.messages = []
+                st.rerun()
+        with col2:
+            if st.button("🧠 Memory", use_container_width=True):
+                requests.post(f"{API_URL}/clear-memory", params={"session_id": st.session_state["session_id"]})
+                st.session_state.messages = []
+                st.rerun()
 
 # ── Main Area ───────────────────────────────────────────
 docs = fetch_docs()
@@ -166,15 +179,8 @@ else:
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    col1, col2 = st.columns([6, 1])
-    with col2:
-        if st.button("🗑 Clear", use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
-
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"], avatar="🧠" if msg["role"] == "assistant" else "👤"):
-            # Show reformulation notice if present
             if msg["role"] == "assistant" and msg.get("reformulation", {}).get("was_reformulated"):
                 ref = msg["reformulation"]
                 st.markdown(f"""
@@ -187,11 +193,11 @@ else:
                 """, unsafe_allow_html=True)
 
             st.markdown(msg["content"])
+
             if msg["role"] == "assistant" and msg.get("sources"):
-                source_html = "".join([f"<span class='source-tag'>📄 {s}</span>" for s in msg["sources"]])
+                source_html = "".join([f"<span class='source-tag'>✅ {s}</span>" for s in msg["sources"]])
                 st.markdown(f"<div style='margin-top:8px'>{source_html}</div>", unsafe_allow_html=True)
 
-            # Explainability panel
             if msg["role"] == "assistant" and msg.get("explainability"):
                 with st.expander("🔍 How did I find this?", expanded=False):
                     for item in msg["explainability"]:
@@ -240,6 +246,7 @@ else:
                 try:
                     res = requests.post(f"{API_URL}/query", json={
                         "question": question,
+                        "session_id": st.session_state.get("session_id", "default"),
                         "doc_ids": st.session_state.get("selected_docs")
                     })
                     if res.status_code == 200:
@@ -252,14 +259,69 @@ else:
                     else:
                         answer = f"Backend error {res.status_code}: {res.text}"
                         sources = []
+                        explainability = []
+                        citation_results = []
+                        reformulation = {}
                 except Exception as e:
                     answer = f"Connection error: {str(e)}"
                     sources = []
+                    explainability = []
+                    citation_results = []
+                    reformulation = {}
 
                 st.markdown(answer)
+
+                if reformulation.get("was_reformulated"):
+                    st.markdown(f"""
+                    <div style='background:#EBF4FF;border:1px solid #BFD9FF;border-radius:8px;
+                                padding:8px 12px;margin-top:8px;font-size:11px;color:#1A56DB'>
+                        🔄 <b>Query reformulated</b><br>
+                        <span style='color:#555'>"{reformulation.get("original")}"</span>
+                        → <span style='color:#1A3C5E;font-weight:600'>"{reformulation.get("reformulated")}"</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                 if sources:
                     source_html = "".join([f"<span class='source-tag'>✅ {s}</span>" for s in sources])
                     st.markdown(f"<div style='margin-top:8px'>{source_html}</div>", unsafe_allow_html=True)
+
+                if explainability:
+                    with st.expander("🔍 How did I find this?", expanded=False):
+                        for item in explainability:
+                            score = item["relevance_score"]
+                            verified = item.get("verified", True)
+                            reason = item.get("reason", "")
+                            bar_color = "#22c55e" if score >= 70 else "#f59e0b" if score >= 40 else "#ef4444"
+                            verified_badge = "✅ Verified" if verified else "⚠️ Unverified"
+                            badge_color = "#22c55e" if verified else "#ef4444"
+
+                            st.markdown(f"""
+                            <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;
+                                        padding:10px 14px;margin-bottom:8px'>
+                                <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>
+                                    <span style='font-size:11px;font-weight:600;color:#1A3C5E'>
+                                        📄 {item["source"]} — Chunk {item["chunk_index"]}
+                                    </span>
+                                    <div style='display:flex;gap:8px;align-items:center'>
+                                        <span style='font-size:11px;font-weight:700;color:{badge_color}'>
+                                            {verified_badge}
+                                        </span>
+                                        <span style='font-size:11px;font-weight:700;color:{bar_color}'>
+                                            {score}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <div style='background:#E2E8F0;border-radius:4px;height:6px;margin-bottom:8px'>
+                                    <div style='background:{bar_color};width:{score}%;height:6px;border-radius:4px'></div>
+                                </div>
+                                <div style='font-size:11px;color:#555;line-height:1.5;margin-bottom:6px'>
+                                    {item["chunk_preview"]}
+                                </div>
+                                <div style='font-size:10px;color:{badge_color};font-style:italic'>
+                                    {reason}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
                 st.session_state.messages.append({
                     "role": "assistant",
